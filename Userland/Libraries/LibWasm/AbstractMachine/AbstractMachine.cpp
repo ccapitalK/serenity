@@ -125,7 +125,7 @@ InstantiationResult AbstractMachine::instantiate(Module const& module, Vector<Ex
 
     BytecodeInterpreter interpreter;
 
-    module.for_each_section_of_type<GlobalSection>([&](auto& global_section) {
+    module.for_each_section_of_type<GlobalSection>([&](const GlobalSection& global_section) {
         for (auto& entry : global_section.entries()) {
             Configuration config { m_store };
             if (m_should_limit_instruction_count)
@@ -134,7 +134,7 @@ InstantiationResult AbstractMachine::instantiate(Module const& module, Vector<Ex
                 auxiliary_instance,
                 Vector<Value> {},
                 entry.expression(),
-                1,
+                { entry.type().type() },
             });
             auto result = config.execute(interpreter);
             if (result.is_trap())
@@ -157,11 +157,15 @@ InstantiationResult AbstractMachine::instantiate(Module const& module, Vector<Ex
                 Configuration config { m_store };
                 if (m_should_limit_instruction_count)
                     config.enable_instruction_count_limit();
+                Vector<ValueType> result_types;
+                for (auto i = 0u; i < entry.instructions().size(); ++i) {
+                    result_types.append(segment.type);
+                }
                 config.set_frame(Frame {
                     main_module_instance,
                     Vector<Value> {},
                     entry,
-                    entry.instructions().size(),
+                    move(result_types),
                 });
                 auto result = config.execute(interpreter);
                 if (result.is_trap()) {
@@ -214,7 +218,7 @@ InstantiationResult AbstractMachine::instantiate(Module const& module, Vector<Ex
                 main_module_instance,
                 Vector<Value> {},
                 active_ptr->expression,
-                1,
+                { ValueType(ValueType::Kind::I32) },
             });
             auto result = config.execute(interpreter);
             if (result.is_trap()) {
@@ -274,7 +278,7 @@ InstantiationResult AbstractMachine::instantiate(Module const& module, Vector<Ex
                         main_module_instance,
                         Vector<Value> {},
                         data.offset,
-                        1,
+                        { ValueType(ValueType::Kind::I32) },
                     });
                     auto result = config.execute(interpreter);
                     if (result.is_trap()) {

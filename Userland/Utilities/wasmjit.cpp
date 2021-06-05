@@ -10,6 +10,7 @@
 #include <LibLine/Editor.h>
 #include <LibWasm/AbstractMachine/AbstractMachine.h>
 #include <LibWasm/AbstractMachine/BytecodeInterpreter.h>
+#include <LibWasm/AbstractMachine/JITInterpreter.h>
 #include <LibWasm/Printer/Printer.h>
 #include <LibWasm/Types.h>
 #include <signal.h>
@@ -20,7 +21,7 @@ static auto g_stdout = Core::OutputFileStream::standard_error();
 static Wasm::Printer g_printer { g_stdout };
 static bool g_continue { false };
 static void (*old_signal)(int);
-static Wasm::DebuggerBytecodeInterpreter g_interpreter;
+static Wasm::JITInterpreter g_interpreter;
 
 static void sigint_handler(int)
 {
@@ -29,216 +30,6 @@ static void sigint_handler(int)
         kill(getpid(), SIGINT);
     }
     g_continue = false;
-}
-
-static bool post_interpret_hook(Wasm::Configuration&, Wasm::InstructionPointer& ip, Wasm::Instruction const& instr, Wasm::Interpreter const& interpreter)
-{
-    if (interpreter.did_trap()) {
-        g_continue = false;
-        warnln("Trapped when executing ip={}", ip);
-        g_printer.print(instr);
-        warnln("Trap reason: {}", interpreter.trap_reason());
-        const_cast<Wasm::Interpreter&>(interpreter).clear_trap();
-    }
-    return true;
-}
-
-static bool pre_interpret_hook(Wasm::Configuration& config, Wasm::InstructionPointer& ip, Wasm::Instruction const& instr)
-{
-    static bool always_print_stack = false;
-    static bool always_print_instruction = false;
-    if (always_print_stack)
-        config.dump_stack();
-    if (always_print_instruction) {
-        g_stdout.write(String::formatted("{:0>4} ", ip.value()).bytes());
-        g_printer.print(instr);
-    }
-    if (g_continue)
-        return true;
-    g_stdout.write(String::formatted("{:0>4} ", ip.value()).bytes());
-    g_printer.print(instr);
-    String last_command = "";
-    for (;;) {
-        auto result = g_line_editor->get_line("> ");
-        if (result.is_error()) {
-            return false;
-        }
-        auto str = result.release_value();
-        g_line_editor->add_to_history(str);
-        if (str.is_empty())
-            str = last_command;
-        else
-            last_command = str;
-        auto args = str.split_view(' ');
-        if (args.is_empty())
-            continue;
-        auto& cmd = args[0];
-        if (cmd.is_one_of("h", "help")) {
-            warnln("Wasm shell commands");
-            warnln("Toplevel:");
-            warnln("- [s]tep                     Run one instruction");
-            warnln("- next                       Alias for step");
-            warnln("- [c]ontinue                 Execute until a trap or the program exit point");
-            warnln("- [p]rint <args...>          Print various things (see section on print)");
-            warnln("- call <fn> <args...>        Call the function <fn> with the given arguments");
-            warnln("- set <args...>              Set shell option (see section on settings)");
-            warnln("- unset <args...>            Unset shell option (see section on settings)");
-            warnln("- [h]elp                     Print this help");
-            warnln();
-            warnln("Print:");
-            warnln("- print [s]tack              Print the contents of the stack, including frames and labels");
-            warnln("- print [[m]em]ory <index>   Print the contents of the memory identified by <index>");
-            warnln("- print [[i]nstr]uction      Print the current instruction");
-            warnln("- print [[f]unc]tion <index> Print the function identified by <index>");
-            warnln();
-            warnln("Settings:");
-            warnln("- set print stack            Make the shell print the stack on every instruction executed");
-            warnln("- set print [instr]uction    Make the shell print the instruction that will be executed next");
-            warnln();
-            continue;
-        }
-        if (cmd.is_one_of("s", "step", "next")) {
-            return true;
-        }
-        if (cmd.is_one_of("p", "print")) {
-            if (args.size() < 2) {
-                warnln("Print what?");
-                continue;
-            }
-            auto& what = args[1];
-            if (what.is_one_of("s", "stack")) {
-                config.dump_stack();
-                continue;
-            }
-            if (what.is_one_of("m", "mem", "memory")) {
-                if (args.size() < 3) {
-                    warnln("print what memory?");
-                    continue;
-                }
-                auto value = args[2].to_uint<u64>();
-                if (!value.has_value()) {
-                    warnln("invalid memory index {}", args[2]);
-                    continue;
-                }
-                auto mem = config.store().get(Wasm::MemoryAddress(value.value()));
-                if (!mem) {
-                    warnln("invalid memory index {} (not found)", args[2]);
-                    continue;
-                }
-                warnln("{:>32hex-dump}", mem->data().bytes());
-                continue;
-            }
-            if (what.is_one_of("i", "instr", "instruction")) {
-                g_printer.print(instr);
-                continue;
-            }
-            if (what.is_one_of("f", "func", "function")) {
-                if (args.size() < 3) {
-                    warnln("print what function?");
-                    continue;
-                }
-                auto value = args[2].to_uint<u64>();
-                if (!value.has_value()) {
-                    warnln("invalid function index {}", args[2]);
-                    continue;
-                }
-                auto fn = config.store().get(Wasm::FunctionAddress(value.value()));
-                if (!fn) {
-                    warnln("invalid function index {} (not found)", args[2]);
-                    continue;
-                }
-                if (auto* fn_value = fn->get_pointer<Wasm::HostFunction>()) {
-                    warnln("Host function at {:p}", &fn_value->function());
-                    continue;
-                }
-                if (auto* fn_value = fn->get_pointer<Wasm::WasmFunction>()) {
-                    g_printer.print(fn_value->code());
-                    continue;
-                }
-            }
-        }
-        if (cmd == "call"sv) {
-            if (args.size() < 2) {
-                warnln("call what?");
-                continue;
-            }
-            Optional<Wasm::FunctionAddress> address;
-            auto index = args[1].to_uint<u64>();
-            if (index.has_value()) {
-                address = config.frame().module().functions()[index.value()];
-            } else {
-                auto& name = args[1];
-                for (auto& export_ : config.frame().module().exports()) {
-                    if (export_.name() == name) {
-                        if (auto addr = export_.value().get_pointer<Wasm::FunctionAddress>()) {
-                            address = *addr;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!address.has_value()) {
-            failed_to_find:;
-                warnln("Could not find a function {}", args[1]);
-                continue;
-            }
-
-            auto fn = config.store().get(*address);
-            if (!fn)
-                goto failed_to_find;
-
-            auto type = fn->visit([&](auto& value) { return value.type(); });
-            if (type.parameters().size() + 2 != args.size()) {
-                warnln("Expected {} arguments for call, but found only {}", type.parameters().size(), args.size() - 2);
-                continue;
-            }
-            Vector<u64> values_to_push;
-            Vector<Wasm::Value> values;
-            for (size_t index = 2; index < args.size(); ++index)
-                values_to_push.append(args[index].to_uint().value_or(0));
-            for (auto& param : type.parameters())
-                values.append(Wasm::Value { param, values_to_push.take_last() });
-
-            Wasm::Result result { Wasm::Trap {} };
-            {
-                Wasm::BytecodeInterpreter::CallFrameHandle handle { g_interpreter, config };
-                result = config.call(g_interpreter, *address, move(values));
-            }
-            if (result.is_trap())
-                warnln("Execution trapped: {}", result.trap().reason);
-            if (!result.values().is_empty())
-                warnln("Returned:");
-            for (auto& value : result.values()) {
-                g_stdout.write("  -> "sv.bytes());
-                g_printer.print(value);
-            }
-            continue;
-        }
-        if (cmd.is_one_of("set", "unset")) {
-            auto value = !cmd.starts_with('u');
-            if (args.size() < 3) {
-                warnln("(un)set what (to what)?");
-                continue;
-            }
-            if (args[1] == "print"sv) {
-                if (args[2] == "stack"sv)
-                    always_print_stack = value;
-                else if (args[2].is_one_of("instr", "instruction"))
-                    always_print_instruction = value;
-                else
-                    warnln("Unknown print category '{}'", args[2]);
-                continue;
-            }
-            warnln("Unknown set category '{}'", args[1]);
-            continue;
-        }
-        if (cmd.is_one_of("c", "continue")) {
-            g_continue = true;
-            return true;
-        }
-        warnln("Command not understood: {}", cmd);
-    }
 }
 
 static Optional<Wasm::Module> parse(StringView const& filename)
@@ -347,8 +138,6 @@ int main(int argc, char* argv[])
         Core::EventLoop main_loop;
         if (debug) {
             g_line_editor = Line::Editor::construct();
-            g_interpreter.pre_interpret_hook = pre_interpret_hook;
-            g_interpreter.post_interpret_hook = post_interpret_hook;
         }
 
         // First, resolve the linked modules
@@ -440,7 +229,6 @@ int main(int argc, char* argv[])
             Wasm::Instruction instr { Wasm::Instructions::nop };
             Wasm::InstructionPointer ip { 0 };
             g_continue = false;
-            pre_interpret_hook(config, ip, instr);
         };
 
         auto stream = Core::OutputFileStream::standard_output();
@@ -509,19 +297,14 @@ int main(int argc, char* argv[])
 
             auto result = machine.invoke(g_interpreter, run_address.value(), move(values));
 
-            if (debug)
-                launch_repl();
-
-            if (result.is_trap()) {
-                warnln("Execution trapped: {}", result.trap().reason);
-            } else {
-                if (!result.values().is_empty())
-                    warnln("Returned:");
-                for (auto& value : result.values()) {
-                    Wasm::Printer printer { stream };
-                    g_stdout.write("  -> "sv.bytes());
-                    g_printer.print(value);
-                }
+            if (result.is_trap())
+                warnln("Execution trapped!");
+            if (!result.values().is_empty())
+                warnln("Returned:");
+            for (auto& value : result.values()) {
+                Wasm::Printer printer { stream };
+                g_stdout.write("  -> "sv.bytes());
+                g_printer.print(value);
             }
         }
     }

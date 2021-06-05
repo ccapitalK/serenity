@@ -42,6 +42,15 @@ void X86Assembler::add_register32_imm32(X86::RegisterIndex32 reg, u32 value)
     m_instruction_buffer.append_le(value);
 }
 
+void X86Assembler::add_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src)
+{
+    u8 modrm = 0xc0 | (src << 3) | dst;
+    m_instruction_buffer.append_bytes({
+        0x01,
+        modrm,
+    });
+}
+
 void X86Assembler::push_register32(X86::RegisterIndex32 reg)
 {
     VERIFY(reg < num_registers());
@@ -94,15 +103,54 @@ void X86Assembler::move<8>(InstructionDestination dst, InstructionArgument src)
 template<>
 void X86Assembler::move<32>(InstructionDestination dst, InstructionArgument src)
 {
-    VERIFY(dst.has<RegisterIndex>() && src.has<Immediate>());
     if (dst.has<RegisterIndex>()) {
-        auto dst_reg = dst.get<RegisterIndex>().value();
-        VERIFY(dst_reg <= num_registers());
-        u8 op = 0xb8 + dst_reg;
-        m_instruction_buffer.append_bytes({ op });
-        m_instruction_buffer.append_le(src.get<Immediate>().value());
+        if (src.has<Immediate>()) {
+            auto dst_reg = dst.get<RegisterIndex>().value();
+            VERIFY(dst_reg <= num_registers());
+            u8 op = 0xb8 + dst_reg;
+            m_instruction_buffer.append_bytes({ op });
+            m_instruction_buffer.append_le(src.get<Immediate>().value());
+        } else if (src.has<RegisterIndex>()) {
+            auto dst_reg = dst.get<RegisterIndex>().value();
+            VERIFY(dst_reg <= num_registers());
+            auto src_reg = src.get<RegisterIndex>().value();
+            VERIFY(src_reg <= num_registers());
+            u8 modrm = 0xc0 | (dst_reg << 3) | src_reg;
+            m_instruction_buffer.append_bytes({
+                0x89,
+                modrm,
+            });
+        } else {
+            auto dst_reg = dst.get<RegisterIndex>().value();
+            VERIFY(dst_reg <= num_registers());
+            auto src_reg = src.get<DereferencedRegisterIndex>().value();
+            VERIFY(src_reg <= num_registers());
+            u8 rm = (dst_reg << 3) | src_reg;
+            m_instruction_buffer.append_bytes({
+                0x8b,
+                rm,
+            });
+        }
     } else {
-        VERIFY_NOT_REACHED();
+        if (src.has<Immediate>()) {
+            VERIFY(src.has<Immediate>());
+            auto dst_reg = dst.get<DereferencedRegisterIndex>().value();
+            VERIFY(dst_reg <= num_registers());
+            m_instruction_buffer.append_bytes({ 0xc7, static_cast<u8>(dst_reg) });
+            m_instruction_buffer.append_le(src.get<Immediate>().value());
+        } else if (src.has<RegisterIndex>()) {
+            auto dst_reg = dst.get<DereferencedRegisterIndex>().value();
+            VERIFY(dst_reg <= num_registers());
+            auto src_reg = src.get<RegisterIndex>().value();
+            VERIFY(src_reg <= num_registers());
+            u8 rm = (src_reg << 3) | dst_reg;
+            m_instruction_buffer.append_bytes({
+                0x89,
+                rm,
+            });
+        } else {
+            VERIFY_NOT_REACHED();
+        }
     }
 }
 

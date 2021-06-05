@@ -19,7 +19,7 @@ TYPEDEF_DISTINCT_NUMERIC_GENERAL(size_t, true, true, false, false, false, true, 
 class InstructionBuffer {
 public:
     InstructionBuffer() = delete;
-    InstructionBuffer(String&& region_name, size_t num_pages = 4);
+    InstructionBuffer(String&& region_name, size_t num_pages = 1);
     ~InstructionBuffer();
 
     void finalize();

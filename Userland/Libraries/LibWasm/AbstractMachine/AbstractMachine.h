@@ -451,11 +451,12 @@ private:
 
 class Frame {
 public:
-    explicit Frame(ModuleInstance const& module, Vector<Value> locals, Expression const& expression, size_t arity)
+    explicit Frame(ModuleInstance const& module, Vector<Value> locals, Expression const& expression, Vector<ValueType> result_types)
         : m_module(module)
         , m_locals(move(locals))
         , m_expression(expression)
-        , m_arity(arity)
+        , m_result_types(move(result_types))
+        , m_arity(m_result_types.size())
     {
     }
 
@@ -463,12 +464,14 @@ public:
     auto& locals() const { return m_locals; }
     auto& locals() { return m_locals; }
     auto& expression() const { return m_expression; }
+    auto& result_types() const { return m_result_types; }
     auto arity() const { return m_arity; }
 
 private:
     ModuleInstance const& m_module;
     Vector<Value> m_locals;
     Expression const& m_expression;
+    Vector<ValueType> m_result_types;
     size_t m_arity { 0 };
 };
 

@@ -53,7 +53,7 @@ Result Configuration::call(Interpreter& interpreter, FunctionAddress address, Ve
             wasm_function->module(),
             move(locals),
             wasm_function->code().body(),
-            wasm_function->type().results().size(),
+            wasm_function->type().results(),
         });
         m_ip = 0;
         return execute(interpreter);
