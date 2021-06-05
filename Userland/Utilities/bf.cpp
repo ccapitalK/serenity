@@ -308,11 +308,11 @@ int main(int argc, char* argv[])
         perror("open");
         return 1;
     }
-    BrainFuckExecutor* executor;
+    OwnPtr<BrainFuckExecutor> executor;
     if (use_jit) {
-        executor = new BrainFuckJIT();
+        executor = make<BrainFuckJIT>();
     } else {
-        executor = new BrainFuckInterpreter();
+        executor = make<BrainFuckInterpreter>();
     }
     executor->parse_source_file(result.value());
 
