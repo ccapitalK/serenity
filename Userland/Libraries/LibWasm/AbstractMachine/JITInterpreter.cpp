@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#ifdef __serenity__
+// #if 1
+
 #include <LibC/mallocdefs.h>
 #include <LibJIT/X86Assembler.h>
 #include <LibWasm/AbstractMachine/JITInterpreter.h>
@@ -69,19 +72,20 @@ void JITInterpreter::interpret(Configuration& configuration)
     // Prelude
     m_assembler.prelude();
     (void) start_of_stack;
-    // auto const start_of_user_stack = bit_cast<u32>(start_of_stack + 8 * configuration.frame().locals().size());
-    // m_assembler.move<32>(JIT::RegisterIndex(stack_register), JIT::Immediate(start_of_user_stack));
-    // m_assembler.move<32>(JIT::RegisterIndex(param_register), JIT::Immediate(bit_cast<u32>(start_of_stack)));
+    auto const start_of_user_stack = bit_cast<u32>(start_of_stack + 8 * configuration.frame().locals().size());
+    m_assembler.move<32>(JIT::RegisterIndex(stack_register), JIT::Immediate(start_of_user_stack));
+    m_assembler.move<32>(JIT::RegisterIndex(param_register), JIT::Immediate(bit_cast<u32>(start_of_stack)));
 
-    // for (auto const& ins : configuration.frame().expression().instructions()) {
-    //     generate_instruction(ins);
-    // }
+    for (auto const& ins : configuration.frame().expression().instructions()) {
+        generate_instruction(ins);
+    }
 
     //epilogue
     m_assembler.epilogue();
     m_assembler.ret();
 
     m_instruction_buf.finalize();
+    m_instruction_buf.dump_encoded_instructions();
     m_instruction_buf.enter_at_offset(entry_point);
 
     for (auto i = 0u; i < configuration.frame().arity(); ++i) {
@@ -110,6 +114,16 @@ void JITInterpreter::clear_trap()
 
 void JITInterpreter::generate_instruction(Instruction const& instruction)
 {
+    auto grab_two_args_from_stack = [this](JIT::RegisterIndex reg1, JIT::RegisterIndex reg2) {
+        m_assembler.add_register32_imm32(stack_register, -8);
+        m_assembler.move<32>(reg1, JIT::DereferencedRegisterIndex(stack_register));
+        m_assembler.add_register32_imm32(stack_register, -8);
+        m_assembler.move<32>(reg2, JIT::DereferencedRegisterIndex(stack_register));
+    };
+    auto push_value_back_to_stack = [this](JIT::RegisterIndex reg) {
+        m_assembler.move<32>(JIT::DereferencedRegisterIndex(stack_register), reg);
+        m_assembler.add_register32_imm32(stack_register, 8);
+    };
     switch (instruction.opcode().value()) {
     case Instructions::i32_const.value(): {
         m_assembler.move<32>(JIT::DereferencedRegisterIndex(stack_register), JIT::Immediate(instruction.arguments().get<i32>()));
@@ -129,13 +143,41 @@ void JITInterpreter::generate_instruction(Instruction const& instruction)
         break;
     }
     case Instructions::i32_add.value(): {
-        m_assembler.add_register32_imm32(stack_register, -8);
-        m_assembler.move<32>(JIT::RegisterIndex(scratch_register1), JIT::DereferencedRegisterIndex(stack_register));
-        m_assembler.add_register32_imm32(stack_register, -8);
-        m_assembler.move<32>(JIT::RegisterIndex(scratch_register2), JIT::DereferencedRegisterIndex(stack_register));
+        grab_two_args_from_stack(scratch_register1, scratch_register2);
         m_assembler.add_register32_reg32(scratch_register1, scratch_register2);
-        m_assembler.move<32>(JIT::DereferencedRegisterIndex(stack_register), JIT::RegisterIndex(scratch_register1));
-        m_assembler.add_register32_imm32(stack_register, 8);
+        push_value_back_to_stack(scratch_register1);
+        break;
+    }
+    case Instructions::i32_sub.value(): {
+        grab_two_args_from_stack(scratch_register1, scratch_register2);
+        m_assembler.sub_register32_reg32(scratch_register1, scratch_register2);
+        push_value_back_to_stack(scratch_register1);
+        break;
+    }
+    case Instructions::i32_mul.value(): {
+        grab_two_args_from_stack(scratch_register1, scratch_register2);
+        m_assembler.push_register32(stack_register);
+        m_assembler.mul_register32(scratch_register2);
+        m_assembler.pop_register32(stack_register);
+        push_value_back_to_stack(scratch_register1);
+        break;
+    }
+    case Instructions::i32_and.value(): {
+        grab_two_args_from_stack(scratch_register1, scratch_register2);
+        m_assembler.and_register32_reg32(scratch_register1, scratch_register2);
+        push_value_back_to_stack(scratch_register1);
+        break;
+    }
+    case Instructions::i32_or.value(): {
+        grab_two_args_from_stack(scratch_register1, scratch_register2);
+        m_assembler.or_register32_reg32(scratch_register1, scratch_register2);
+        push_value_back_to_stack(scratch_register1);
+        break;
+    }
+    case Instructions::i32_xor.value(): {
+        grab_two_args_from_stack(scratch_register1, scratch_register2);
+        m_assembler.xor_register32_reg32(scratch_register1, scratch_register2);
+        push_value_back_to_stack(scratch_register1);
         break;
     }
     default: {
@@ -145,3 +187,5 @@ void JITInterpreter::generate_instruction(Instruction const& instruction)
 }
 
 }
+
+#endif

@@ -6,6 +6,9 @@
 
 #pragma once
 
+#ifdef __serenity__
+// #if 1
+
 #include <LibJIT/InstructionBuffer.h>
 #include <LibJIT/X86Assembler.h>
 #include <LibWasm/AbstractMachine/Interpreter.h>
@@ -41,6 +44,7 @@ private:
     JIT::InstructionBuffer m_instruction_buf;
     JIT::X86Assembler m_assembler;
     GuardedStackSpace m_stack_space;
+    HashMap<String, JIT::JITLabel> m_function_lookup;
 
     static constexpr X86::RegisterIndex32 scratch_register1 = X86::RegisterEAX;
     static constexpr X86::RegisterIndex32 scratch_register2 = X86::RegisterEBX;
@@ -49,3 +53,5 @@ private:
 };
 
 }
+
+#endif

@@ -47,9 +47,14 @@ public:
 
     void inc_register32(X86::RegisterIndex32 reg);
     void dec_register32(X86::RegisterIndex32 reg);
+    void mul_register32(X86::RegisterIndex32 reg);
 
     void add_register32_imm32(X86::RegisterIndex32 reg, u32 value);
     void add_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src);
+    void sub_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src);
+    void and_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src);
+    void or_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src);
+    void xor_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src);
 
     void push_register32(X86::RegisterIndex32 reg);
     void pop_register32(X86::RegisterIndex32 reg);

@@ -32,6 +32,13 @@ void X86Assembler::dec_register32(X86::RegisterIndex32 reg)
     m_instruction_buffer.append_bytes({ op });
 }
 
+void X86Assembler::mul_register32(X86::RegisterIndex32 reg)
+{
+    u8 const op = 0xf7;
+    u8 const modrm = 0xe0 | reg;
+    m_instruction_buffer.append_bytes({ op , modrm });
+}
+
 void X86Assembler::add_register32_imm32(X86::RegisterIndex32 reg, u32 value)
 {
     u8 const sub_op = 0xc0 + reg;
@@ -47,6 +54,41 @@ void X86Assembler::add_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterI
     u8 modrm = 0xc0 | (src << 3) | dst;
     m_instruction_buffer.append_bytes({
         0x01,
+        modrm,
+    });
+}
+
+void X86Assembler::sub_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src)
+{
+    u8 modrm = 0xc0 | (src << 3) | dst;
+    m_instruction_buffer.append_bytes({
+        0x29,
+        modrm,
+    });
+}
+
+void X86Assembler::and_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src)
+{
+    u8 modrm = 0xc0 | (src << 3) | dst;
+    m_instruction_buffer.append_bytes({
+        0x21,
+        modrm,
+    });
+}
+
+void X86Assembler::or_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src)
+{
+    u8 modrm = 0xc0 | (src << 3) | dst;
+    m_instruction_buffer.append_bytes({
+        0x09,
+        modrm,
+    });
+}
+void X86Assembler::xor_register32_reg32(X86::RegisterIndex32 dst, X86::RegisterIndex32 src)
+{
+    u8 modrm = 0xc0 | (src << 3) | dst;
+    m_instruction_buffer.append_bytes({
+        0x31,
         modrm,
     });
 }
