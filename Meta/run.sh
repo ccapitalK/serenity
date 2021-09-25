@@ -172,7 +172,13 @@ else
     SERENITY_QEMU_DISPLAY_BACKEND="${SERENITY_QEMU_DISPLAY_BACKEND:-gtk,gl=off}"
 fi
 
-if [ "$SERENITY_SCREENS" -gt 1 ]; then
+if : ; then
+    SERENITY_QEMU_DISPLAY_DEVICE="virtio-vga-gl"
+    # QEMU appears to always relay absolute mouse coordinates relative to the screen that the mouse is
+    # pointed to, without any way for us to know what screen it was. So, when dealing with multiple
+    # displays force using relative coordinates only
+    SERENITY_KERNEL_CMDLINE="$SERENITY_KERNEL_CMDLINE vmmouse=off"
+elif [ "$SERENITY_SCREENS" -gt 1 ]; then
     SERENITY_QEMU_DISPLAY_DEVICE="virtio-vga,max_outputs=$SERENITY_SCREENS "
     # QEMU appears to always relay absolute mouse coordinates relative to the screen that the mouse is
     # pointed to, without any way for us to know what screen it was. So, when dealing with multiple
@@ -200,6 +206,7 @@ if [ -z "$SERENITY_MACHINE" ]; then
         -display $SERENITY_QEMU_DISPLAY_BACKEND
         -device $SERENITY_QEMU_DISPLAY_DEVICE
         -drive file=${SERENITY_DISK_IMAGE},format=raw,index=0,media=disk
+        -trace enable="virtio_gpu_*"
         -device virtio-serial,max_ports=2
         -device virtconsole,chardev=stdout
         -device isa-debugcon,chardev=stdout

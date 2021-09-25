@@ -80,6 +80,7 @@ set(KERNEL_SOURCES
     Graphics/VirtIOGPU/FrameBufferDevice.cpp
     Graphics/VirtIOGPU/Console.cpp
     Graphics/VirtIOGPU/GPU.cpp
+    Graphics/VirtIOGPU/GPU3DDevice.cpp
     Graphics/VirtIOGPU/GraphicsAdapter.cpp
     Graphics/VGACompatibleAdapter.cpp
     SanCov.cpp

@@ -30,7 +30,9 @@ namespace Kernel::Graphics::VirtIOGPU {
 
 class Console;
 class FrameBufferDevice;
+class GPU3DDevice;
 
+TYPEDEF_DISTINCT_ORDERED_ID(u32, ContextID);
 TYPEDEF_DISTINCT_ORDERED_ID(u32, ResourceID);
 TYPEDEF_DISTINCT_ORDERED_ID(u32, ScanoutID);
 
@@ -58,6 +60,7 @@ public:
     }
 
     virtual void initialize() override;
+    void initialize_3d_device();
 
     RefPtr<Console> default_console()
     {
@@ -78,6 +81,19 @@ public:
 
     void flush_dirty_rectangle(ScanoutID, Protocol::Rect const& dirty_rect, ResourceID);
 
+    struct Resource3DSpecification {
+        u32 target;
+        u32 format;
+        u32 bind;
+        u32 width;
+        u32 height;
+        u32 depth;
+        u32 array_size;
+        u32 last_level;
+        u32 nr_samples;
+        u32 flags;
+    };
+
 private:
     virtual StringView class_name() const override { return "VirtIOGPU"; }
 
@@ -92,8 +108,15 @@ private:
     u32 get_pending_events();
     void clear_pending_events(u32 event_bitmask);
 
+    // 3D Command stuff
+    ContextID create_context();
+    void attach_resource_to_context(ResourceID resource_id, ContextID context_id);
+    void submit_command_buffer(ContextID, Function<size_t(Bytes)> buffer_writer);
+    Protocol::TextureFormat get_framebuffer_format() const { return Protocol::TextureFormat::VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM; }
+
     auto& operation_lock() { return m_operation_lock; }
     ResourceID allocate_resource_id();
+    ContextID allocate_context_id();
 
     PhysicalAddress start_of_scratch_space() const { return m_scratch_space->physical_page(0)->paddr(); }
     AK::BinaryBufferWriter create_scratchspace_writer()
@@ -105,12 +128,13 @@ private:
 
     void query_display_information();
     ResourceID create_2d_resource(Protocol::Rect rect);
+    ResourceID create_3d_resource(Resource3DSpecification const& resource_3d_specification);
     void delete_resource(ResourceID resource_id);
     void ensure_backing_storage(Memory::Region const& region, size_t buffer_offset, size_t buffer_length, ResourceID resource_id);
     void detach_backing_storage(ResourceID resource_id);
     void set_scanout_resource(ScanoutID scanout, ResourceID resource_id, Protocol::Rect rect);
-    void transfer_framebuffer_data_to_host(ScanoutID scanout, Protocol::Rect const& rect, ResourceID resource_id);
-    void flush_displayed_image(Protocol::Rect const& dirty_rect, ResourceID resource_id);
+    void transfer_framebuffer_data_to_host(ScanoutID scanout, Protocol::Rect const& dirty_rect, ResourceID resource_id);
+    void flush_resource(ResourceID resource_id, Protocol::Rect const& dirty_rect);
 
     Optional<ScanoutID> m_default_scanout;
     size_t m_num_scanouts { 0 };
@@ -118,11 +142,16 @@ private:
 
     VirtIO::Configuration const* m_device_configuration { nullptr };
     ResourceID m_resource_id_counter { 0 };
+    ContextID m_context_id_counter { 0 };
+    OwnPtr<GPU3DDevice> m_3d_device;
+    bool m_has_virgl_support { false };
 
     // Synchronous commands
     WaitQueue m_outstanding_request;
     Mutex m_operation_lock;
     OwnPtr<Memory::Region> m_scratch_space;
+
+    friend class GPU3DDevice;
 };
 
 }

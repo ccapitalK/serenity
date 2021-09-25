@@ -111,7 +111,7 @@ void FrameBufferDevice::flush_dirty_window(Protocol::Rect const& dirty_rect, Buf
 
 void FrameBufferDevice::flush_displayed_image(Protocol::Rect const& dirty_rect, Buffer& buffer)
 {
-    m_gpu.flush_displayed_image(dirty_rect, buffer.resource_id);
+    m_gpu.flush_resource(buffer.resource_id, dirty_rect);
 }
 
 bool FrameBufferDevice::try_to_set_resolution(size_t width, size_t height)
@@ -144,7 +144,7 @@ void FrameBufferDevice::set_buffer(int buffer_index)
         return;
     m_current_buffer = &buffer;
     m_gpu.set_scanout_resource(m_scanout.value(), buffer.resource_id, display_info().rect);
-    m_gpu.flush_displayed_image(buffer.dirty_rect, buffer.resource_id); // QEMU SDL backend requires this (as per spec)
+    m_gpu.flush_resource(buffer.resource_id, buffer.dirty_rect); // QEMU SDL backend requires this (as per spec)
     buffer.dirty_rect = {};
 }
 

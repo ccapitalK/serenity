@@ -31,6 +31,7 @@ void GraphicsAdapter::initialize_framebuffer_devices()
     dbgln_if(VIRTIO_DEBUG, "GPU: Initializing framebuffer devices");
     VERIFY(!m_created_framebuffer_devices);
     m_gpu_device->create_framebuffer_devices();
+    m_gpu_device->initialize_3d_device();
     m_created_framebuffer_devices = true;
 
     // FIXME: This is a very wrong way to do this...
