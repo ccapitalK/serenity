@@ -10,6 +10,7 @@
 #include <Kernel/Bus/VirtIO/Queue.h>
 #include <Kernel/Graphics/FramebufferDevice.h>
 #include <Kernel/Graphics/GenericGraphicsAdapter.h>
+// #include <Kernel/Graphics/VirtIOGPU/GPU3DDevice.h>
 #include <Kernel/Graphics/VirtIOGPU/Protocol.h>
 
 namespace Kernel::Graphics::VirtIOGPU {
@@ -105,6 +106,8 @@ private:
     bool m_are_writes_active { true };
     // FIXME: This needs to be cleaned up if the WindowServer exits while we are in a tty
     WeakPtr<Memory::Region> m_userspace_mmap_region;
+
+    friend class GPU3DDevice;
 };
 
 }

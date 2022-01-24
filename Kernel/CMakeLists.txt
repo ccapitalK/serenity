@@ -82,6 +82,7 @@ set(KERNEL_SOURCES
     Graphics/Intel/NativeGraphicsAdapter.cpp
     Graphics/VirtIOGPU/FramebufferDevice.cpp
     Graphics/VirtIOGPU/Console.cpp
+    Graphics/VirtIOGPU/GPU3DDevice.cpp
     Graphics/VirtIOGPU/GraphicsAdapter.cpp
     Graphics/VGACompatibleAdapter.cpp
     Graphics/GenericFramebufferDevice.cpp
