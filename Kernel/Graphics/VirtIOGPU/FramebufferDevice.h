@@ -45,6 +45,7 @@ public:
     }
 
     u8* framebuffer_data();
+    ResourceID get_main_resource_id();
 
 private:
     virtual bool multihead_support() const override { return false; }

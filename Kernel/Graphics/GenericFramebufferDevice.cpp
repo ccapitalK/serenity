@@ -153,6 +153,7 @@ GenericFramebufferDevice::GenericFramebufferDevice(const GenericGraphicsAdapter&
     : BlockDevice(29, GraphicsManagement::the().allocate_minor_device_number())
     , m_graphics_adapter(adapter)
 {
+    dbgln("FBDev Initialized ({}, {})", major(), minor());
 }
 
 }

@@ -150,12 +150,12 @@ private:
     VirtIO::Configuration const* m_device_configuration { nullptr };
     ResourceID m_resource_id_counter { 0 };
     ContextID m_context_id_counter { 0 };
-    OwnPtr<GPU3DDevice> m_3d_device;
+    RefPtr<GPU3DDevice> m_3d_device;
     bool m_has_virgl_support { false };
 
     // Synchronous commands
     WaitQueue m_outstanding_request;
-    Spinlock m_operation_lock;
+    Mutex m_operation_lock;
     OwnPtr<Memory::Region> m_scratch_space;
 
     friend class Kernel::Graphics::VirtIOGPU::GPU3DDevice;

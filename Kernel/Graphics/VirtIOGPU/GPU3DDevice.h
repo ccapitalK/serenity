@@ -7,7 +7,7 @@
 #pragma once
 
 #include <AK/DistinctNumeric.h>
-#include <Kernel/Devices/BlockDevice.h>
+#include <Kernel/Devices/CharacterDevice.h>
 #include <Kernel/Graphics/VirtIOGPU/FramebufferDevice.h>
 #include <Kernel/Graphics/VirtIOGPU/Protocol.h>
 
@@ -89,28 +89,44 @@ union ClearType {
     u32 value;
 };
 
-class GPU3DDevice {
+class GPU3DDevice : public CharacterDevice {
 public:
     GPU3DDevice() = delete;
-    explicit GPU3DDevice(GraphicsAdapter& graphics_adapter, Kernel::Graphics::VirtIOGPU::FramebufferDevice& framebuffer_device);
+    explicit GPU3DDevice(GraphicsAdapter& graphics_adapter);
 
+    bool can_read (const OpenFileDescription&, u64) const override { return true; }
+    bool can_write (const OpenFileDescription&, u64) const override { return true; }
+    ErrorOr<size_t> read(OpenFileDescription&, u64, UserOrKernelBuffer&, size_t) override { return ENOTSUP; }
+    ErrorOr<size_t> write(OpenFileDescription&, u64, const UserOrKernelBuffer&, size_t) override { return ENOTSUP; }
+    StringView class_name() const override { return "virgl3d"; }
+    void setup_demo(Kernel::Graphics::VirtIOGPU::FramebufferDevice& framebuffer_device);
+
+    void register_scanout_framebuffer(ResourceID resource_id);
+    void unregister_scanout_framebuffer(ResourceID resource_id);
+    void transfer_scanout(ResourceID scanout_resource, Protocol::Rect dirty_rect);
+    ErrorOr<void> ioctl(OpenFileDescription&, unsigned request, Userspace<void*> arg) override;
 private:
     ObjectHandle allocate_object_handle();
-    void draw_frame();
+    void demo_draw_frame();
+
     // TODO: Return value should be handle?
     void bind_shader(const char *shader_data);
 
     ResourceID create_and_upload_resource(u8 *data);
 
     Kernel::Graphics::VirtIOGPU::GraphicsAdapter& m_graphics_adapter;
-    Kernel::Graphics::VirtIOGPU::FramebufferDevice& m_framebuffer_device;
-    ContextID m_context_id;
+    // Context used for kernel operations (e.g. flushing resources to scanout)
+    ContextID m_kernel_context_id;
     ObjectHandle m_object_handle_counter { 0 };
+    HashMap<ResourceID, ObjectHandle> m_scanout_handles;
+    // Stuff used by the Demo
     OwnPtr<Memory::Region> m_transfer_buffer_region;
     ObjectHandle m_drawtarget_surface_handle;
+    ObjectHandle m_blend_handle;
     ResourceID m_drawtarget_resource_id;
     ResourceID m_vbo_resource_id;
     Protocol::Rect m_drawtarget_rect;
+    constexpr static size_t TRANSFER_REGION_PAGES = 32;
 };
 
 }

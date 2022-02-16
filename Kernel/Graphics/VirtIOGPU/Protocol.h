@@ -16,7 +16,7 @@ TYPEDEF_DISTINCT_ORDERED_ID(u32, ResourceID);
 TYPEDEF_DISTINCT_ORDERED_ID(u32, ScanoutID);
 };
 
-#define VREND_MAX_CTX 16
+#define VREND_MAX_CTX 64
 
 #define VIRGL_BIND_DEPTH_STENCIL (1 << 0)
 #define VIRGL_BIND_RENDER_TARGET (1 << 1)
@@ -83,7 +83,7 @@ enum class CommandType : u32 {
 };
 
 enum class ObjectType : u32 {
-    NULL,
+    NONE,
     BLEND,
     RASTERIZER,
     DSA,

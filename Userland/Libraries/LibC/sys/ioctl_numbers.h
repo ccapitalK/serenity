@@ -74,6 +74,29 @@ struct FBFlushRects {
     struct FBRect const* rects;
 };
 
+struct VirGL3DResourceSpec {
+    unsigned target;
+    unsigned format;
+    unsigned bind;
+    unsigned width;
+    unsigned height;
+    unsigned depth;
+    unsigned array_size;
+    unsigned last_level;
+    unsigned nr_samples;
+    unsigned flags;
+    unsigned created_resource_id;
+};
+
+struct VirGLDisplayInfo {
+    unsigned drawtarget_id;
+};
+
+struct VirGLCommandBuffer {
+    unsigned *data;
+    unsigned  num_elems;
+};
+
 __END_DECLS
 
 enum IOCtlNumber {
@@ -125,9 +148,12 @@ enum IOCtlNumber {
     SOUNDCARD_IOCTL_GET_SAMPLE_RATE,
     STORAGE_DEVICE_GET_SIZE,
     STORAGE_DEVICE_GET_BLOCK_SIZE,
+    VIRGL_IOCTL_SETUP_DEMO,
     VIRGL_IOCTL_CREATE_RESOURCE,
+    VIRGL_IOCTL_GET_DISPLAY_INFO,
     VIRGL_IOCTL_SUBMIT_CMD,
-    VIRGL_IOCTL_SETUP_TRANSFER_REGION,
+    VIRGL_IOCTL_FLUSH_DISPLAY,
+    VIRLG_IOCTL_TRANSFER_TO_HOST,
 };
 
 #define TIOCGPGRP TIOCGPGRP
@@ -175,3 +201,8 @@ enum IOCtlNumber {
 #define SOUNDCARD_IOCTL_GET_SAMPLE_RATE SOUNDCARD_IOCTL_GET_SAMPLE_RATE
 #define STORAGE_DEVICE_GET_SIZE STORAGE_DEVICE_GET_SIZE
 #define STORAGE_DEVICE_GET_BLOCK_SIZE STORAGE_DEVICE_GET_BLOCK_SIZE
+#define VIRGL_IOCTL_SETUP_DEMO VIRGL_IOCTL_SETUP_DEMO
+#define VIRGL_IOCTL_CREATE_RESOURCE VIRGL_IOCTL_CREATE_RESOURCE
+#define VIRGL_IOCTL_SUBMIT_CMD VIRGL_IOCTL_SUBMIT_CMD
+#define VIRGL_IOCTL_GET_DISPLAY_INFO VIRGL_IOCTL_GET_DISPLAY_INFO
+#define VIRGL_IOCTL_FLUSH_DISPLAY VIRGL_IOCTL_FLUSH_DISPLAY

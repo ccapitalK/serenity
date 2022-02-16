@@ -8,12 +8,13 @@
 #include <AK/NonnullOwnPtr.h>
 #include <Kernel/Bus/PCI/API.h>
 #include <Kernel/Bus/PCI/IDs.h>
+#include <Kernel/Devices/DeviceManagement.h>
 #include <Kernel/Graphics/Console/GenericFramebufferConsole.h>
 #include <Kernel/Graphics/GraphicsManagement.h>
 #include <Kernel/Graphics/VirtIOGPU/Console.h>
 #include <Kernel/Graphics/VirtIOGPU/FramebufferDevice.h>
-#include <Kernel/Graphics/VirtIOGPU/GraphicsAdapter.h>
 #include <Kernel/Graphics/VirtIOGPU/GPU3DDevice.h>
+#include <Kernel/Graphics/VirtIOGPU/GraphicsAdapter.h>
 
 namespace Kernel::Graphics::VirtIOGPU {
 
@@ -43,7 +44,10 @@ void GraphicsAdapter::initialize_framebuffer_devices()
     dbgln_if(VIRTIO_DEBUG, "VirtIO::GraphicsAdapter: Initializing framebuffer devices");
     VERIFY(!m_created_framebuffer_devices);
     create_framebuffer_devices();
-    initialize_3d_device();
+    {
+        MutexLocker locker{operation_lock()};
+        // m_3d_device->run_demo(*m_scanouts[0].framebuffer);
+    }
     m_created_framebuffer_devices = true;
 
     GraphicsManagement::the().set_console(*default_console());
@@ -78,6 +82,7 @@ void GraphicsAdapter::initialize()
         bool success = negotiate_features([&](u64 supported_features) {
             u64 negotiated = 0;
             if (is_feature_set(supported_features, VIRTIO_GPU_F_VIRGL)) {
+                AK::dbgln("\n\n\n\nVirgl is available");
                 negotiated |= VIRTIO_GPU_F_VIRGL;
                 m_has_virgl_support = true;
             }
@@ -94,7 +99,8 @@ void GraphicsAdapter::initialize()
         }
         VERIFY(success);
         finish_init();
-        SpinlockLocker locker(m_operation_lock);
+        initialize_3d_device();
+        MutexLocker locker(m_operation_lock);
         // Get display information using VIRTIO_GPU_CMD_GET_DISPLAY_INFO
         query_display_information();
         query_display_edid({});
@@ -267,6 +273,9 @@ ResourceID GraphicsAdapter::create_2d_resource(Protocol::Rect rect)
 
     VERIFY(response.type == static_cast<u32>(Protocol::CommandType::VIRTIO_GPU_RESP_OK_NODATA));
     dbgln_if(VIRTIO_DEBUG, "VirtIO::GraphicsAdapter: Allocated 2d resource with id {}", resource_id.value());
+    if (m_has_virgl_support) {
+        m_3d_device->register_scanout_framebuffer(resource_id);
+    }
     return resource_id;
 }
 
@@ -365,18 +374,22 @@ void GraphicsAdapter::set_scanout_resource(ScanoutID scanout, ResourceID resourc
 void GraphicsAdapter::transfer_framebuffer_data_to_host(ScanoutID scanout, ResourceID resource_id, Protocol::Rect const& dirty_rect)
 {
     VERIFY(m_operation_lock.is_locked());
-    auto writer = create_scratchspace_writer();
-    auto& request = writer.append_structure<Protocol::TransferToHost2D>();
-    auto& response = writer.append_structure<Protocol::ControlHeader>();
+    if (m_has_virgl_support && false) {
+        m_3d_device->transfer_scanout(resource_id, dirty_rect);
+    } else {
+        auto writer = create_scratchspace_writer();
+        auto& request = writer.append_structure<Protocol::TransferToHost2D>();
+        auto& response = writer.append_structure<Protocol::ControlHeader>();
 
-    populate_virtio_gpu_request_header(request.header, Protocol::CommandType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D, VIRTIO_GPU_FLAG_FENCE);
-    request.offset = (dirty_rect.x + (dirty_rect.y * m_scanouts[scanout.value()].display_info.rect.width)) * sizeof(u32);
-    request.resource_id = resource_id.value();
-    request.rect = dirty_rect;
+        populate_virtio_gpu_request_header(request.header, Protocol::CommandType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D, VIRTIO_GPU_FLAG_FENCE);
+        request.offset = (dirty_rect.x + (dirty_rect.y * m_scanouts[scanout.value()].display_info.rect.width)) * sizeof(u32);
+        request.resource_id = resource_id.value();
+        request.rect = dirty_rect;
 
-    synchronous_virtio_gpu_command(start_of_scratch_space(), sizeof(request), sizeof(response));
+        synchronous_virtio_gpu_command(start_of_scratch_space(), sizeof(request), sizeof(response));
 
-    VERIFY(response.type == static_cast<u32>(Protocol::CommandType::VIRTIO_GPU_RESP_OK_NODATA));
+        VERIFY(response.type == static_cast<u32>(Protocol::CommandType::VIRTIO_GPU_RESP_OK_NODATA));
+    }
 }
 
 void GraphicsAdapter::flush_displayed_image(ResourceID resource_id, Protocol::Rect const& dirty_rect)
@@ -422,7 +435,7 @@ void GraphicsAdapter::populate_virtio_gpu_request_header(Protocol::ControlHeader
 
 void GraphicsAdapter::flush_dirty_rectangle(ScanoutID scanout_id, ResourceID resource_id, Protocol::Rect const& dirty_rect)
 {
-    SpinlockLocker locker(m_operation_lock);
+    MutexLocker locker(m_operation_lock);
     transfer_framebuffer_data_to_host(scanout_id, resource_id, dirty_rect);
     flush_displayed_image(resource_id, dirty_rect);
 }
@@ -453,18 +466,18 @@ void GraphicsAdapter::delete_resource(ResourceID resource_id)
 
     synchronous_virtio_gpu_command(start_of_scratch_space(), sizeof(request), sizeof(response));
 
+    if (m_has_virgl_support) {
+        m_3d_device->unregister_scanout_framebuffer(resource_id);
+    }
     VERIFY(response.type == static_cast<u32>(Protocol::CommandType::VIRTIO_GPU_RESP_OK_NODATA));
 }
 
 void GraphicsAdapter::initialize_3d_device()
 {
     if (m_has_virgl_support) {
-        SpinlockLocker locker(m_operation_lock);
+        MutexLocker locker(m_operation_lock);
         // FIXME: This framebuffer can cease to exist
-        auto res = try_make<VirtIOGPU::GPU3DDevice>(*this, *m_scanouts[0].framebuffer);
-        VERIFY(!res.is_error());
-        m_3d_device = move(res.value());
-        VERIFY_NOT_REACHED();
+        m_3d_device = MUST(DeviceManagement::try_create_device<VirtIOGPU::GPU3DDevice>(*this));
     }
 }
 
