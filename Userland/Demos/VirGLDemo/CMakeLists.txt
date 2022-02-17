@@ -4,6 +4,7 @@ serenity_component(
 )
 
 set(SOURCES
+    CommandBufferBuilder.cpp
     VirGLDemo.cpp
 )
 

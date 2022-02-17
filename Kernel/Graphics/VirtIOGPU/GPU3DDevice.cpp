@@ -250,13 +250,9 @@ static void encode_gl_clear(u32* data, size_t& used, size_t max, u8 r, u8 g, u8 
 }
 
 [[maybe_unused]] static void encode_end_transfers_3d(u32* data, size_t& used, size_t max) {
-    size_t padding_amount = 1024 - ((used + 1) % 1024);
-    VERIFY(used + 1 + padding_amount <= max);
-    data[used] = encode_command(padding_amount + 1, 0, VirGLCommand::END_TRANSFERS);
-    for (size_t i = 0; i < padding_amount; ++i) {
-        data[used + i + 1] = 0;
-    }
-    data += padding_amount + 1;
+    VERIFY(used + 1 <= max);
+    data[used] = encode_command(0, 0, VirGLCommand::END_TRANSFERS);
+    used += 1;
 }
 
 [[maybe_unused]] static void encode_draw_vbo(u32* data, size_t& used, size_t max) {
@@ -359,7 +355,6 @@ void GPU3DDevice::register_scanout_framebuffer(ResourceID resource_id)
         used += 3;
         return used * sizeof(u32);
     });
-    // FIXME: Send a command buffer associating a handle with this device
 }
 
 void GPU3DDevice::unregister_scanout_framebuffer(ResourceID resource_id)
@@ -381,15 +376,6 @@ GPU3DDevice::GPU3DDevice(GraphicsAdapter& graphics_adapter)
         VERIFY(!region_result.is_error());
         m_transfer_buffer_region = region_result.release_value();
     }
-
-    m_graphics_adapter.submit_command_buffer(m_kernel_context_id, [&](Bytes buffer) {
-        auto* data = (u32*)buffer.data();
-        size_t used = 0;
-        // Create and set the subcontext
-        encode_create_subcontext(data, used, buffer.size(), 1);
-        encode_set_subcontext(data, used, buffer.size(), 1);
-        return used * sizeof(u32);
-    });
 }
 
 void GPU3DDevice::setup_demo(Kernel::Graphics::VirtIOGPU::FramebufferDevice& framebuffer_device) {
@@ -399,29 +385,8 @@ void GPU3DDevice::setup_demo(Kernel::Graphics::VirtIOGPU::FramebufferDevice& fra
         (u32)framebuffer_device.width(),
         (u32)framebuffer_device.height()
     };
-    // m_drawtarget_resource_id = m_graphics_adapter.create_2d_resource(m_drawtarget_rect);
-    // dbgln("Got drawtarget resource id {}", m_drawtarget_resource_id);
-    // m_graphics_adapter.attach_resource_to_context(m_drawtarget_resource_id, m_kernel_context_id);
-    // m_graphics_adapter.set_scanout_resource(framebuffer_device.m_scanout, m_drawtarget_resource_id, m_drawtarget_rect);
     m_drawtarget_resource_id = framebuffer_device.get_main_resource_id();
     memcpy(m_transfer_buffer_region->vaddr().as_ptr(), vertices, sizeof(vertices));
-
-    Protocol::Resource3DSpecification const vbo_spec = {
-        .target = Protocol::Gallium::PipeTextureTarget::BUFFER, // pipe_texture_target
-        .format = 45, // pipe_to_virgl_format
-        .bind = VIRGL_BIND_VERTEX_BUFFER,
-        .width = PAGE_SIZE,
-        .height = 1,
-        .depth = 1,
-        .array_size = 1,
-        .last_level = 0,
-        .nr_samples = 0,
-        .flags = 0
-    };
-    m_vbo_resource_id = m_graphics_adapter.create_3d_resource(vbo_spec);
-    m_graphics_adapter.ensure_backing_storage(m_vbo_resource_id, *m_transfer_buffer_region, 0, TRANSFER_REGION_PAGES * PAGE_SIZE);
-    m_graphics_adapter.attach_resource_to_context(m_vbo_resource_id, m_kernel_context_id);
-    dbgln("Got vbo resource id {}", m_vbo_resource_id);
 
     [[maybe_unused]] auto ve_handle = allocate_object_handle();
     [[maybe_unused]] auto blend_handle = allocate_object_handle();
@@ -437,9 +402,6 @@ void GPU3DDevice::setup_demo(Kernel::Graphics::VirtIOGPU::FramebufferDevice& fra
         // Create and bind a blend, to control the default color mask
         encode_create_blend(data, used, buffer.size(), m_blend_handle);
         encode_bind_blend(data, used, buffer.size(), m_blend_handle);
-        // Transfer data to vbo
-        encode_transfer3d_flat(data, used, buffer.size(), m_vbo_resource_id, sizeof(vertices));
-        encode_end_transfers_3d(data, used, buffer.size());
         // Set tweaks, I don't know whether we really need these
         // GLES: Apply dest swizzle when a BGRA surface is emulated by an RGBA surface
         // encode_set_tweaks(data, used, buffer.size(), 1, 1);
@@ -485,33 +447,11 @@ void GPU3DDevice::setup_demo(Kernel::Graphics::VirtIOGPU::FramebufferDevice& fra
         encode_bind_vertex_elements(data, used, buffer.size(), ve_handle);
         // Set the constant buffer (currently just stores the identity matrix)
         encode_set_constant_buffer(data, used, buffer.size());
-        // Set the vertex buffer
-        encode_set_vertex_buffers(data, used, buffer.size(), 20, 0, m_vbo_resource_id);
-        // Draw a triangle
-        encode_draw_vbo(data, used, buffer.size());
         return used * sizeof(u32);
     });
-}
-
-void GPU3DDevice::demo_draw_frame()
-{
-    m_graphics_adapter.submit_command_buffer(m_kernel_context_id, [&](Bytes buffer) {
-        auto* data = (u32*)buffer.data();
-        size_t used = 0;
-        // Transfer data to vbo
-        encode_transfer3d_flat(data, used, buffer.size(), m_vbo_resource_id, sizeof(vertices));
-        encode_end_transfers_3d(data, used, buffer.size());
-        // Clear the framebuffer
-        encode_gl_clear(data, used, buffer.size(), 0, 0, 0);
-        // Draw the vbo
-        encode_draw_vbo(data, used, buffer.size());
-        return used * sizeof(u32);
-    });
-    m_graphics_adapter.flush_displayed_image(m_drawtarget_resource_id, m_drawtarget_rect);
 }
 
 ErrorOr<void> GPU3DDevice::ioctl(OpenFileDescription&, unsigned request, Userspace<void*> arg) {
-    (void) arg;
     switch (request) {
     case VIRGL_IOCTL_SETUP_DEMO: {
         auto &framebuffer = *m_graphics_adapter.m_scanouts[0].framebuffer;
@@ -520,25 +460,28 @@ ErrorOr<void> GPU3DDevice::ioctl(OpenFileDescription&, unsigned request, Userspa
         setup_demo(framebuffer);
         return {};
     }
-    case VIRGL_IOCTL_SUBMIT_CMD: {
-        for (auto &v: vertices) {
-            v.ru32 = float_lookup.vals[get_fast_random<u8>()];
-            v.gu32 = float_lookup.vals[get_fast_random<u8>()];
-            v.bu32 = float_lookup.vals[get_fast_random<u8>()];
+    case VIRGL_IOCTL_TRANSFER_DATA: {
+        auto user_transfer_descriptor = static_ptr_cast<VirGLTransferDescriptor const*>(arg);
+        auto transfer_descriptor = TRY(copy_typed_from_user(user_transfer_descriptor));
+        if (transfer_descriptor.direction == VIRGL_DATA_DIR_GUEST_TO_HOST) {
+            if (transfer_descriptor.num_bytes > TRANSFER_REGION_PAGES * PAGE_SIZE) {
+                return EOVERFLOW;
+            }
+            auto target = m_transfer_buffer_region->vaddr().offset(transfer_descriptor.offset_in_region).as_ptr();
+            return copy_from_user(target, transfer_descriptor.data, transfer_descriptor.num_bytes);
+        } else {
+            return EINVAL;
         }
-        memcpy(m_transfer_buffer_region->vaddr().as_ptr(), vertices, sizeof(vertices));
+    }
+    case VIRGL_IOCTL_SUBMIT_CMD: {
         MutexLocker locker(m_graphics_adapter.operation_lock());
+        auto user_command_buffer = static_ptr_cast<VirGLCommandBuffer const*>(arg);
+        auto command_buffer = TRY(copy_typed_from_user(user_command_buffer));
         m_graphics_adapter.submit_command_buffer(m_kernel_context_id, [&](Bytes buffer) {
-            auto* data = (u32*)buffer.data();
-            size_t used = 0;
-            // Transfer data to vbo
-            encode_transfer3d_flat(data, used, buffer.size(), m_vbo_resource_id, sizeof(vertices));
-            encode_end_transfers_3d(data, used, buffer.size());
-            // Clear the framebuffer
-            encode_gl_clear(data, used, buffer.size(), 0, 0, 0);
-            // Draw the vbo
-            encode_draw_vbo(data, used, buffer.size());
-            return used * sizeof(u32);
+            auto num_bytes = command_buffer.num_elems * sizeof(u32);
+            VERIFY( num_bytes <= buffer.size());
+            MUST(copy_from_user(buffer.data(), command_buffer.data, num_bytes));
+            return num_bytes;
         });
         return {};
     }
@@ -565,14 +508,17 @@ ErrorOr<void> GPU3DDevice::ioctl(OpenFileDescription&, unsigned request, Userspa
         };
         MutexLocker locker(m_graphics_adapter.operation_lock());
         auto resource_id = m_graphics_adapter.create_3d_resource(resource_spec).value();
-        m_graphics_adapter.attach_resource_to_context(m_vbo_resource_id, m_kernel_context_id);
+        m_graphics_adapter.attach_resource_to_context(resource_id, m_kernel_context_id);
         m_graphics_adapter.ensure_backing_storage(resource_id, *m_transfer_buffer_region, 0, TRANSFER_REGION_PAGES * PAGE_SIZE);
+        dbgln("Created resource with ID: {}", resource_id);
         spec.created_resource_id = resource_id;
         // FIXME: We should delete the resource we just created if we fail to copy the resource id out
         return copy_to_user(static_ptr_cast<VirGL3DResourceSpec*>(arg), &spec);
     }
-    case VIRGL_IOCTL_GET_DISPLAY_INFO: {
-        break;
+    case VIRGL_IOCTL_FINISH_DEMO: {
+        auto &framebuffer = *m_graphics_adapter.m_scanouts[0].framebuffer;
+        framebuffer.activate_writes();
+        return {};
     }
     }
     return EINVAL;

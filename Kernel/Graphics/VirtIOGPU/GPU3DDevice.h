@@ -24,7 +24,6 @@ enum class VirGLCommand : u32 {
     SET_FRAMEBUFFER_STATE,
     SET_VERTEX_BUFFERS,
     CLEAR,
-    // FIXME: This is really more of a VAO
     DRAW_VBO,
     RESOURCE_INLINE_WRITE,
     SET_SAMPLER_VIEWS,
@@ -107,7 +106,6 @@ public:
     ErrorOr<void> ioctl(OpenFileDescription&, unsigned request, Userspace<void*> arg) override;
 private:
     ObjectHandle allocate_object_handle();
-    void demo_draw_frame();
 
     // TODO: Return value should be handle?
     void bind_shader(const char *shader_data);
@@ -124,7 +122,6 @@ private:
     ObjectHandle m_drawtarget_surface_handle;
     ObjectHandle m_blend_handle;
     ResourceID m_drawtarget_resource_id;
-    ResourceID m_vbo_resource_id;
     Protocol::Rect m_drawtarget_rect;
     constexpr static size_t TRANSFER_REGION_PAGES = 32;
 };
