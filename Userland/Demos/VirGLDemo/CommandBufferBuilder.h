@@ -8,13 +8,26 @@
 
 #include <AK/Vector.h>
 
+#include "VirGLProtocol.h"
+
 class CommandBufferBuilder {
 public:
-    void append_transfer3d_flat(u32 resource, size_t length);
+    void append_transfer3d_flat(ResourceID resource, size_t length);
     void append_end_transfers_3d();
     void append_draw_vbo(u32 count);
     void append_gl_clear(float r, float g, float b);
-    void append_set_vertex_buffers(u32 stride, u32 offset, u32 resource);
+    void append_set_vertex_buffers(u32 stride, u32 offset, ResourceID resource);
+    void append_create_blend(ObjectHandle handle);
+    void append_bind_blend(ObjectHandle handle);
+    void append_create_surface(ResourceID drawtarget_resource, ObjectHandle drawtarget_handle);
+    void append_set_framebuffer_state(ObjectHandle handle);
+    void append_create_vertex_elements(ObjectHandle handle);
+    void append_bind_vertex_elements(ObjectHandle handle);
+    void append_gl_viewport();
+    void append_set_framebuffer_state_no_attach();
+    void append_set_constant_buffer(Vector<float> const& constant_buffer);
+    void append_create_shader(ObjectHandle handle, Gallium::ShaderType shader_type, const char* shader_data);
+    void append_bind_shader(ObjectHandle handle, Gallium::ShaderType shader_type);
     Vector<u32> const& build() { return m_buffer; }
 private:
     Vector<u32> m_buffer;

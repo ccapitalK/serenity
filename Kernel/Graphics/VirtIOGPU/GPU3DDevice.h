@@ -119,11 +119,9 @@ private:
     HashMap<ResourceID, ObjectHandle> m_scanout_handles;
     // Stuff used by the Demo
     OwnPtr<Memory::Region> m_transfer_buffer_region;
-    ObjectHandle m_drawtarget_surface_handle;
-    ObjectHandle m_blend_handle;
     ResourceID m_drawtarget_resource_id;
     Protocol::Rect m_drawtarget_rect;
-    constexpr static size_t TRANSFER_REGION_PAGES = 32;
+    constexpr static size_t NUM_TRANSFER_REGION_PAGES = 32;
 };
 
 }
