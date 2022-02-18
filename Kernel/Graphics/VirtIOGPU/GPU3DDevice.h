@@ -107,9 +107,6 @@ public:
 private:
     ObjectHandle allocate_object_handle();
 
-    // TODO: Return value should be handle?
-    void bind_shader(const char *shader_data);
-
     ResourceID create_and_upload_resource(u8 *data);
 
     Kernel::Graphics::VirtIOGPU::GraphicsAdapter& m_graphics_adapter;
@@ -121,7 +118,7 @@ private:
     OwnPtr<Memory::Region> m_transfer_buffer_region;
     ResourceID m_drawtarget_resource_id;
     Protocol::Rect m_drawtarget_rect;
-    constexpr static size_t NUM_TRANSFER_REGION_PAGES = 32;
+    constexpr static size_t NUM_TRANSFER_REGION_PAGES = 256;
 };
 
 }

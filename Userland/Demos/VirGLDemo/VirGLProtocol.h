@@ -25,6 +25,8 @@ TYPEDEF_DISTINCT_ORDERED_ID(u32, ResourceID);
 #define VIRGL_BIND_CURSOR        (1 << 16)
 #define VIRGL_BIND_CUSTOM        (1 << 17)
 #define VIRGL_BIND_SCANOUT       (1 << 18)
+#define VIRGL_BIND_STAGING       (1 << 19)
+#define VIRGL_BIND_SHARED        (1 << 20)
 
 namespace Protocol {
 

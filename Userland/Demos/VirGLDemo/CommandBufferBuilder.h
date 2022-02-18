@@ -7,11 +7,13 @@
 #pragma once
 
 #include <AK/Vector.h>
+#include <sys/ioctl_numbers.h>
 
 #include "VirGLProtocol.h"
 
 class CommandBufferBuilder {
 public:
+    void append_transfer3d(ResourceID resource, size_t width, size_t height = 1, size_t depth = 1, size_t direction = VIRGL_DATA_DIR_GUEST_TO_HOST);
     void append_transfer3d_flat(ResourceID resource, size_t length);
     void append_end_transfers_3d();
     void append_draw_vbo(u32 count);

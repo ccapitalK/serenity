@@ -97,8 +97,8 @@ struct VirGLCommandBuffer {
     unsigned num_elems;
 };
 
-#define VIRGL_DATA_DIR_GUEST_TO_HOST 0
-#define VIRGL_DATA_DIR_HOST_TO_GUEST 1
+#define VIRGL_DATA_DIR_GUEST_TO_HOST 1
+#define VIRGL_DATA_DIR_HOST_TO_GUEST 2
 
 struct VirGLTransferDescriptor {
     void *data;

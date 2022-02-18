@@ -6,6 +6,9 @@
 
 #include <AK/String.h>
 #include <AK/Vector.h>
+#include <LibGUI/Application.h>
+#include <LibGUI/Icon.h>
+#include <LibGUI/Window.h>
 #include <LibMain/Main.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -16,6 +19,7 @@
 
 #include "CommandBufferBuilder.h"
 #include "VirGLProtocol.h"
+#include "Widget.h"
 
 [[maybe_unused]] static const char* frag_shader =
     "FRAG\n"
@@ -66,12 +70,6 @@ static void init() {
     // Open the device
     gpu_fd = open("/dev/gpu0", O_RDWR);
     VERIFY(gpu_fd >= 0);
-    // Do kernel space setup (disable writes from display server)
-    VERIFY(ioctl(gpu_fd, VIRGL_IOCTL_SETUP_DEMO) >= 0);
-    // Get info
-    VirGLDisplayInfo display_info;
-    VERIFY(ioctl(gpu_fd, VIRGL_IOCTL_GET_DISPLAY_INFO, &display_info) >= 0);
-    drawtarget = {display_info.drawtarget_id};
     // Create a VertexElements resource
     VirGL3DResourceSpec vbo_spec {
         .target = AK::to_underlying(Gallium::PipeTextureTarget::BUFFER), // pipe_texture_target
@@ -88,6 +86,22 @@ static void init() {
     };
     VERIFY(ioctl(gpu_fd, VIRGL_IOCTL_CREATE_RESOURCE, &vbo_spec) >= 0);
     vbo_resource_id = vbo_spec.created_resource_id;
+    // Create a texture to draw to
+    VirGL3DResourceSpec drawtarget_spec {
+        .target = AK::to_underlying(Gallium::PipeTextureTarget::TEXTURE_RECT), // pipe_texture_target
+        .format = AK::to_underlying(Protocol::TextureFormat::VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM), // pipe_to_virgl_format
+        .bind = VIRGL_BIND_RENDER_TARGET,
+        .width = DRAWTARGET_WIDTH,
+        .height = DRAWTARGET_HEIGHT,
+        .depth = 1,
+        .array_size = 1,
+        .last_level = 0,
+        .nr_samples = 0,
+        .flags = 0,
+        .created_resource_id = 0,
+    };
+    VERIFY(ioctl(gpu_fd, VIRGL_IOCTL_CREATE_RESOURCE, &drawtarget_spec) >= 0);
+    drawtarget = drawtarget_spec.created_resource_id;
 
     // Initialize all required state
     CommandBufferBuilder builder;
@@ -117,10 +131,12 @@ static void init() {
     builder.append_bind_vertex_elements(ve_handle);
     // Set the Viewport
     builder.append_gl_viewport();
-    // Set the constant buffer
+    // FIXME: Changing the identity matrix is bad practice, we should find a proper way of flipping the Y coordinates
+    // Set the constant buffer to the identity matrix (flip the y multiplicand, since the drawn texture would
+    // otherwise be upside down relative to serenity's bitmap encoding)
     builder.append_set_constant_buffer({
         1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
+        0.0, -1.0, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
         0.0, 0.0, 0.0, 1.0,
     });
@@ -168,24 +184,52 @@ static void draw_frame() {
     builder.append_transfer3d_flat(vbo_resource_id, sizeof(vertices));
     builder.append_end_transfers_3d();
     // Clear the framebuffer
-    builder.append_gl_clear(0, 0, 0.5);
+    builder.append_gl_clear(0, 0, 0);
     // Draw the vbo
     builder.append_draw_vbo(3);
     upload_command_buffer(builder.build());
     VERIFY(ioctl(gpu_fd, VIRGL_IOCTL_FLUSH_DISPLAY) >= 0);
 }
 
-static void finish() {
-    VERIFY(ioctl(gpu_fd, VIRGL_IOCTL_FINISH_DEMO) >= 0);
+void update_frame(RefPtr<Gfx::Bitmap> target) {
+    VERIFY(target->width() == DRAWTARGET_WIDTH);
+    VERIFY(target->height() == DRAWTARGET_HEIGHT);
+    draw_frame();
+    // Transfer back to guest
+    CommandBufferBuilder builder;
+    builder.append_transfer3d(drawtarget, DRAWTARGET_WIDTH, DRAWTARGET_HEIGHT, 1, VIRGL_DATA_DIR_HOST_TO_GUEST);
+    builder.append_end_transfers_3d();
+    upload_command_buffer(builder.build());
+    // Copy to userspace
+    VirGLTransferDescriptor descriptor {
+        .data = (void*)target->scanline_u8(0),
+        .offset_in_region = 0,
+        .num_bytes = DRAWTARGET_WIDTH * DRAWTARGET_HEIGHT * sizeof(u32),
+        .direction = VIRGL_DATA_DIR_HOST_TO_GUEST,
+    };
+    dbgln("Going to transfer vertex data");
+    VERIFY(ioctl(gpu_fd, VIRGL_IOCTL_TRANSFER_DATA, &descriptor) >= 0);
 }
 
-ErrorOr<int> serenity_main(Main::Arguments)
+ErrorOr<int> serenity_main(Main::Arguments arguments)
 {
+    auto app = TRY(GUI::Application::try_create(arguments));
+
+    auto window = TRY(GUI::Window::try_create());
+    window->set_double_buffering_enabled(true);
+    window->set_title("VirGLDemo");
+    window->set_resizable(false);
+    window->resize(DRAWTARGET_WIDTH, DRAWTARGET_HEIGHT);
+    window->set_has_alpha_channel(true);
+    window->set_alpha_hit_threshold(1);
+
+    auto demo = TRY(window->try_set_main_widget<Demo>());
+
+    auto app_icon = GUI::Icon::default_icon("app-cube");
+    window->set_icon(app_icon.bitmap_for_size(16));
+
     init();
-    for (int i = 0; i < 10; ++i) {
-        draw_frame();
-        usleep(200000);
-    }
-    finish();
-    return {0};
+    window->show();
+
+    return app->exec();
 }

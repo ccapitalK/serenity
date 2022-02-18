@@ -36,25 +36,6 @@ static u32 encode_command(u32 length, u32 mid, VirGLCommand command) {
     return (length << 16) | ((mid & 0xff) << 8) | (command_value & 0xff);
 };
 
-static float const_buffer[16] = {
-    1, 0, 0, 0,
-    0, 1, 0, 0,
-    0, 0, 1, 0,
-    0, 0, 0, 1
-};
-
-[[maybe_unused]] static void encode_set_constant_buffer(u32* data, size_t& used, size_t max) {
-    size_t num_entries = sizeof(const_buffer)/sizeof(*const_buffer);
-    VERIFY(used + num_entries + 3 <= max);
-    data[used + 0] = encode_command(num_entries + 2, 0, VirGLCommand::SET_CONSTANT_BUFFER);
-    data[used + 1] = AK::to_underlying(Protocol::Gallium::ShaderType::SHADER_VERTEX); // shader_type
-    data[used + 2] = 0; // index (currently unused according to virglrenderer source code)
-    for (size_t i = 0; i < num_entries; ++i) {
-        data[used + 3 + i] = AK::bit_cast<u32>(const_buffer[i]);
-    }
-    used += num_entries + 3;
-}
-
 [[maybe_unused]] static void encode_create_subcontext(u32* data, size_t& used, size_t max, u32 subcontext) {
     VERIFY(used + 2 <= max);
     data[used + 0] = encode_command(1, 0, VirGLCommand::CREATE_SUB_CTX);
@@ -327,9 +308,14 @@ ErrorOr<void> GPU3DDevice::ioctl(OpenFileDescription&, unsigned request, Userspa
             if (transfer_descriptor.offset_in_region + transfer_descriptor.num_bytes > NUM_TRANSFER_REGION_PAGES * PAGE_SIZE) {
                 return EOVERFLOW;
             }
-            dbgln("Got request to transfer data");
             auto target = m_transfer_buffer_region->vaddr().offset(transfer_descriptor.offset_in_region).as_ptr();
             return copy_from_user(target, transfer_descriptor.data, transfer_descriptor.num_bytes);
+        } else if (transfer_descriptor.direction == VIRGL_DATA_DIR_HOST_TO_GUEST) {
+            if (transfer_descriptor.offset_in_region + transfer_descriptor.num_bytes > NUM_TRANSFER_REGION_PAGES * PAGE_SIZE) {
+                return EOVERFLOW;
+            }
+            auto source = m_transfer_buffer_region->vaddr().offset(transfer_descriptor.offset_in_region).as_ptr();
+            return copy_to_user(transfer_descriptor.data, source, transfer_descriptor.num_bytes);
         } else {
             return EINVAL;
         }
@@ -383,10 +369,6 @@ ErrorOr<void> GPU3DDevice::ioctl(OpenFileDescription&, unsigned request, Userspa
     }
     }
     return EINVAL;
-}
-
-void GPU3DDevice::bind_shader(const char*)
-{
 }
 
 void GPU3DDevice::transfer_scanout(ResourceID scanout_resource, Protocol::Rect dirty_rect) {
