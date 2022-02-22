@@ -168,7 +168,7 @@ UNMAP_AFTER_INIT bool GraphicsManagement::determine_and_initialize_graphics_devi
 UNMAP_AFTER_INIT bool GraphicsManagement::initialize()
 {
 
-    /* Explanation on the flow when not requesting to force not creating any 
+    /* Explanation on the flow when not requesting to force not creating any
      * framebuffer devices:
      * If the user wants to use a Console instead of the graphical environment,
      * they doesn't need to request text mode.
@@ -179,26 +179,26 @@ UNMAP_AFTER_INIT bool GraphicsManagement::initialize()
      * 1. The bootloader didn't specify settings of a pre-set framebuffer. The
      * kernel has a native driver for a detected display adapter, therefore
      * the kernel can still set a framebuffer.
-     * 2. The bootloader specified settings of a pre-set framebuffer, and the 
+     * 2. The bootloader specified settings of a pre-set framebuffer, and the
      * kernel has a native driver for a detected display adapter, therefore
      * the kernel can still set a framebuffer and change the settings of it.
-     * In that situation, the kernel will simply ignore the Multiboot pre-set 
+     * In that situation, the kernel will simply ignore the Multiboot pre-set
      * framebuffer.
-     * 2. The bootloader specified settings of a pre-set framebuffer, and the 
-     * kernel does not have a native driver for a detected display adapter, 
+     * 2. The bootloader specified settings of a pre-set framebuffer, and the
+     * kernel does not have a native driver for a detected display adapter,
      * therefore the kernel will use the pre-set framebuffer. Modesetting is not
      * available in this situation.
-     * 3. The bootloader didn't specify settings of a pre-set framebuffer, and 
-     * the kernel does not have a native driver for a detected display adapter, 
+     * 3. The bootloader didn't specify settings of a pre-set framebuffer, and
+     * the kernel does not have a native driver for a detected display adapter,
      * therefore the kernel will try to initialize a VGA text mode console.
      * In that situation, the kernel will assume that VGA text mode was already
-     * initialized, but will still try to modeset it. No switching to graphical 
+     * initialized, but will still try to modeset it. No switching to graphical
      * environment is allowed in this case.
-     * 
+     *
      * By default, the kernel assumes that no framebuffer was created until it
-     * was proven that there's an existing framebuffer or we can modeset the 
+     * was proven that there's an existing framebuffer or we can modeset the
      * screen resolution to create a framebuffer.
-     * 
+     *
      * If the user requests to force no initialization of framebuffer devices
      * the same flow above will happen, except that no framebuffer device will
      * be created, so SystemServer will not try to initialize WindowServer.
