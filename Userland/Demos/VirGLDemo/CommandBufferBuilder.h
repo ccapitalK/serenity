@@ -29,6 +29,10 @@ public:
     void append_set_constant_buffer(Vector<float> const& constant_buffer);
     void append_create_shader(ObjectHandle handle, Gallium::ShaderType shader_type, const char* shader_data);
     void append_bind_shader(ObjectHandle handle, Gallium::ShaderType shader_type);
+    void append_create_rasterizer(ObjectHandle handle);
+    void append_bind_rasterizer(ObjectHandle handle);
+    void append_create_dsa(ObjectHandle handle);
+    void append_bind_dsa(ObjectHandle handle);
     Vector<u32> const& build() { return m_buffer; }
 
 private:

@@ -409,7 +409,7 @@ else
         -device $SERENITY_ETHERNET_DEVICE_TYPE,netdev=breh \
         "
     fi
-    "$SERENITY_QEMU_BIN" \
+    apitrace trace -- "$SERENITY_QEMU_BIN" \
         $SERENITY_COMMON_QEMU_ARGS \
         $SERENITY_VIRT_TECH_ARG \
         $SERENITY_PACKET_LOGGING_ARG \
@@ -417,4 +417,5 @@ else
         -kernel Kernel/Prekernel/Prekernel \
         -initrd Kernel/Kernel \
         -append "${SERENITY_KERNEL_CMDLINE}"
+    apitrace dump gl.run >> ../../gl.run
 fi

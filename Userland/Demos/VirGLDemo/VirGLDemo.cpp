@@ -10,6 +10,7 @@
 #include <LibGUI/Icon.h>
 #include <LibGUI/Window.h>
 #include <LibMain/Main.h>
+#include <LibGfx/Matrix4x4.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +43,15 @@ static const char* vert_shader = "VERT\n"
                                  "  4: MOV_SAT OUT[1], IN[1]\n"
                                  "  5: END\n";
 
+struct VertexData {
+    float r;
+    float g;
+    float b;
+    float x;
+    float y;
+    float z;
+};
+
 int gpu_fd;
 ResourceID vbo_resource_id;
 ResourceID drawtarget;
@@ -50,6 +60,9 @@ ObjectHandle drawtarget_surface_handle;
 ObjectHandle ve_handle;
 ObjectHandle frag_shader_handle;
 ObjectHandle vert_shader_handle;
+ObjectHandle rasterizer_handle;
+ObjectHandle dsa_handle;
+Vector<VertexData> g_vertices;
 
 static ObjectHandle allocate_handle()
 {
@@ -73,6 +86,56 @@ static ResourceID create_virgl_resource(VirGL3DResourceSpec& spec)
 {
     VERIFY(ioctl(gpu_fd, VIRGL_IOCTL_CREATE_RESOURCE, &spec) >= 0);
     return spec.created_resource_id;
+}
+
+static VertexData gen_rand_colored_vertex_at(float x, float y, float z)
+{
+    return {
+        .r = ((float)(rand() % 256)) / 255.f,
+        .g = ((float)(rand() % 256)) / 255.f,
+        .b = ((float)(rand() % 256)) / 255.f,
+        .x = x,
+        .y = y,
+        .z = z,
+    };
+}
+
+static Vector<VertexData> gen_vertex_data() {
+    Vector<VertexData> data;
+    static const VertexData vertices[8] = {
+        gen_rand_colored_vertex_at(-0.5, -0.5, -0.5),
+        gen_rand_colored_vertex_at( 0.5, -0.5, -0.5),
+        gen_rand_colored_vertex_at(-0.5,  0.5, -0.5),
+        gen_rand_colored_vertex_at( 0.5,  0.5, -0.5),
+        gen_rand_colored_vertex_at(-0.5, -0.5,  0.5),
+        gen_rand_colored_vertex_at( 0.5, -0.5,  0.5),
+        gen_rand_colored_vertex_at(-0.5,  0.5,  0.5),
+        gen_rand_colored_vertex_at( 0.5,  0.5,  0.5),
+    };
+    size_t tris[36] = {
+        // Top
+        0, 1, 2,
+        1, 3, 2,
+        // Left
+        4, 0, 6,
+        0, 2, 6,
+        // Up
+        4, 5, 0,
+        5, 1, 0,
+        // Right
+        1, 5, 3,
+        5, 7, 3,
+        // Down
+        2, 3, 6,
+        3, 7, 6,
+        // Bottom
+        5, 4, 7,
+        4, 6, 7,
+    };
+    for(auto index: tris) {
+        data.append(vertices[index]);
+    }
+    return data;
 }
 
 static void init()
@@ -124,7 +187,7 @@ static void init()
     builder.append_set_framebuffer_state(drawtarget_surface_handle);
     builder.append_set_framebuffer_state_no_attach();
     // Set the vertex buffer
-    builder.append_set_vertex_buffers(20, 0, vbo_resource_id);
+    builder.append_set_vertex_buffers(sizeof(VertexData), 0, vbo_resource_id);
     // Create and bind fragment shader
     frag_shader_handle = allocate_handle();
     builder.append_create_shader(frag_shader_handle, Gallium::ShaderType::SHADER_FRAGMENT, frag_shader);
@@ -137,49 +200,53 @@ static void init()
     ve_handle = allocate_handle();
     builder.append_create_vertex_elements(ve_handle);
     builder.append_bind_vertex_elements(ve_handle);
+    // Create a DepthStencilAlpha (DSA) object
+    dsa_handle = allocate_handle();
+    builder.append_create_dsa(dsa_handle);
+    builder.append_bind_dsa(dsa_handle);
     // Set the Viewport
     builder.append_gl_viewport();
-    // FIXME: Changing the identity matrix to fix display orientation is bad practice, we should instead
-    //        find a proper way of flipping the Y coordinates
-    // Set the constant buffer to the identity matrix (negate the y multiplicand, since the drawn texture
-    // would otherwise be upside down relative to serenity's bitmap encoding)
-    builder.append_set_constant_buffer({ 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 });
     // Upload buffer
     upload_command_buffer(builder.build());
+
+    // Setup the vertex data
+    g_vertices = gen_vertex_data();
 }
 
-struct VertexData {
-    float r;
-    float g;
-    float b;
-    float x;
-    float y;
-};
+static Gfx::FloatMatrix4x4 get_transform_matrix(unsigned step_num) {
+    auto mat = Gfx::FloatMatrix4x4::identity();
+    float angle = step_num * 0.02;
+    mat = mat * Gfx::rotation_matrix(FloatVector3(1, 0, 0), angle * 1.17356641f);
+    mat = mat * Gfx::rotation_matrix(FloatVector3(0, 1, 0), angle * 0.90533273f);
+    mat = mat * Gfx::rotation_matrix(FloatVector3(0, 0, 1), angle);
+    return mat;
+}
 
-static VertexData gen_rand_colored_vertex_at(float x, float y)
-{
-    return {
-        .r = ((float)(rand() % 256)) / 255.f,
-        .g = ((float)(rand() % 256)) / 255.f,
-        .b = ((float)(rand() % 256)) / 255.f,
-        .x = x,
-        .y = y,
+static Vector<float> encode_constant_buffer(Gfx::FloatMatrix4x4 const& mat) {
+    constexpr Gfx::FloatMatrix4x4 flip_y = {
+        1, 0, 0, 0,
+        0, -1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
     };
+    auto real_mat = mat * flip_y;
+    Vector<float> values;
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            values.append(real_mat.elements()[i][j]);
+        }
+    }
+    return values;
 }
 
-static void draw_frame()
+static void draw_frame(unsigned step_num)
 {
+    auto matrix = get_transform_matrix(step_num);
     // Choose random top vertex x ordinate
-    float top_x_ordinate = 0.9 - ((rand() % 18) / 10.0);
-    VertexData vertices[3] = {
-        gen_rand_colored_vertex_at(-0.8, -0.8),
-        gen_rand_colored_vertex_at(0.8, -0.8),
-        gen_rand_colored_vertex_at(top_x_ordinate, 0.9),
-    };
     VirGLTransferDescriptor descriptor {
-        .data = (void*)vertices,
+        .data = (void*)g_vertices.data(),
         .offset_in_region = 0,
-        .num_bytes = sizeof(vertices),
+        .num_bytes = sizeof(VertexData) * g_vertices.size(),
         .direction = VIRGL_DATA_DIR_GUEST_TO_HOST,
     };
     // Transfer data from vertices array to kernel virgl transfer region
@@ -187,22 +254,24 @@ static void draw_frame()
     // Create command buffer
     CommandBufferBuilder builder;
     // Transfer data from kernel virgl transfer region to host resource
-    builder.append_transfer3d(vbo_resource_id, sizeof(vertices), 1, 1, VIRGL_DATA_DIR_GUEST_TO_HOST);
+    builder.append_transfer3d(vbo_resource_id, sizeof(VertexData) * g_vertices.size(), 1, 1, VIRGL_DATA_DIR_GUEST_TO_HOST);
     builder.append_end_transfers_3d();
+    // Set the constant buffer to the identity matrix
+    builder.append_set_constant_buffer(encode_constant_buffer(matrix));
     // Clear the framebuffer
     builder.append_gl_clear(0, 0, 0);
     // Draw the vbo
-    builder.append_draw_vbo(3);
+    builder.append_draw_vbo(g_vertices.size());
     // Upload the buffer
     upload_command_buffer(builder.build());
 }
 
-void update_frame(RefPtr<Gfx::Bitmap> target)
+void update_frame(RefPtr<Gfx::Bitmap> target, unsigned num_cycles)
 {
     VERIFY(target->width() == DRAWTARGET_WIDTH);
     VERIFY(target->height() == DRAWTARGET_HEIGHT);
     // Run logic to draw the frame
-    draw_frame();
+    draw_frame(num_cycles);
     // Transfer data back from hypervisor to kernel transfer region
     CommandBufferBuilder builder;
     builder.append_transfer3d(drawtarget, DRAWTARGET_WIDTH, DRAWTARGET_HEIGHT, 1, VIRGL_DATA_DIR_HOST_TO_GUEST);

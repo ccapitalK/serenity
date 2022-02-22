@@ -123,13 +123,13 @@ void CommandBufferBuilder::append_draw_vbo(u32 count)
 void CommandBufferBuilder::append_gl_clear(float r, float g, float b)
 {
     CommandBuilder builder(m_buffer, Protocol::VirGLCommand::CLEAR, 0);
-    builder.appendu32(4);
+    builder.appendu32(5); // Buffers (Bitfield of flags to clear, PIPE_CLEAR_COLOR0=4, PIPE_CLEAR_STENCIL=2, PIPE_CLEAR_DEPTH=1)
     builder.appendf32(r);
     builder.appendf32(g);
     builder.appendf32(b);
-    builder.appendf32(1.0f);
-    builder.appendf64(1.0);
-    builder.appendu32(0);
+    builder.appendf32(1.0f); // Alpha
+    builder.appendf64(1.0); // Depth
+    builder.appendu32(0); // Stencil
 }
 
 void CommandBufferBuilder::append_set_vertex_buffers(u32 stride, u32 offset, ResourceID resource)
@@ -165,7 +165,7 @@ void CommandBufferBuilder::append_create_vertex_elements(ObjectHandle handle)
     builder.appendu32(12); // src_offset_0
     builder.appendu32(0);  // instance_divisor_0
     builder.appendu32(0);  // vertex_buffer_index_0
-    builder.appendu32(29); // src_format_0 (PIPE_FORMAT_R32G32_FLOAT = 29)
+    builder.appendu32(30); // src_format_0 (PIPE_FORMAT_R32G32_FLOAT = 29)
     builder.appendu32(0);  // src_offset_1
     builder.appendu32(0);  // instance_divisor_1
     builder.appendu32(0);  // vertex_buffer_index_1
@@ -242,4 +242,40 @@ void CommandBufferBuilder::append_bind_shader(ObjectHandle handle, Gallium::Shad
     CommandBuilder builder(m_buffer, Protocol::VirGLCommand::BIND_SHADER, 0);
     builder.appendu32(handle.value()); // VIRGL_OBJ_BIND_HANDLE
     builder.appendu32(to_underlying(shader_type));
+}
+
+void CommandBufferBuilder::append_create_rasterizer(ObjectHandle handle)
+{
+    CommandBuilder builder(m_buffer, Protocol::VirGLCommand::CREATE_OBJECT, to_underlying(Protocol::ObjectType::RASTERIZER));
+    builder.appendu32(handle.value()); // Handle
+    builder.appendu32(0x00000002); // S0 (bitfield of state bits)
+    builder.appendf32(1.0); // Point size
+    builder.appendu32(0); // Sprite coord enable
+    builder.appendu32(0x00000000); // S3 (bitfield of state bits)
+    builder.appendf32(0.1); // Line width
+    builder.appendf32(0.0); // Offset units
+    builder.appendf32(0.0); // offset scale
+    builder.appendf32(0.0); // Offset clamp
+}
+
+void CommandBufferBuilder::append_bind_rasterizer(ObjectHandle handle)
+{
+    CommandBuilder builder(m_buffer, Protocol::VirGLCommand::BIND_OBJECT, to_underlying(Protocol::ObjectType::RASTERIZER));
+    builder.appendu32(handle.value()); // VIRGL_OBJ_BIND_HANDLE
+}
+
+void CommandBufferBuilder::append_create_dsa(ObjectHandle handle)
+{
+    CommandBuilder builder(m_buffer, Protocol::VirGLCommand::CREATE_OBJECT, to_underlying(Protocol::ObjectType::DSA));
+    builder.appendu32(handle.value()); // Handle
+    builder.appendu32(0x00000005); // S0 (bitset: (v >> 0) & 1 = depth.enabled, (v >> 1) & 1 = depth.writemask,  (v >> 2) & 7 = depth.func)
+    builder.appendu32(0x00000000); // S1 (bitset for 1st stencil buffer)
+    builder.appendu32(0x00000000); // S2 (bitset for 2nd stencil buffer)
+    builder.appendf32(1.0); // Alpha Ref
+}
+
+void CommandBufferBuilder::append_bind_dsa(ObjectHandle handle)
+{
+    CommandBuilder builder(m_buffer, Protocol::VirGLCommand::BIND_OBJECT, to_underlying(Protocol::ObjectType::DSA));
+    builder.appendu32(handle.value()); // VIRGL_OBJ_BIND_HANDLE
 }

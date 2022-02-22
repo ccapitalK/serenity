@@ -14,12 +14,10 @@ Demo::Demo()
     m_bitmap = Gfx::Bitmap::try_create(Gfx::BitmapFormat::BGRx8888, { DRAWTARGET_WIDTH, DRAWTARGET_HEIGHT }).release_value_but_fixme_should_propagate_errors();
     m_bitmap->fill(Gfx::Color::Black);
 
-    m_accumulated_time = 0;
     m_cycles = 0;
-    m_phase = 0;
 
     stop_timer();
-    start_timer(200);
+    start_timer(20);
 }
 
 Demo::~Demo() { }
@@ -33,6 +31,7 @@ void Demo::paint_event(GUI::PaintEvent& event)
 
 void Demo::timer_event(Core::TimerEvent&)
 {
-    update_frame(m_bitmap);
+    m_cycles += 1;
+    update_frame(m_bitmap, m_cycles);
     update();
 }

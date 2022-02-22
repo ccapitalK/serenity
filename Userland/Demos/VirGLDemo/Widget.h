@@ -8,7 +8,7 @@
 
 #include <LibGUI/Widget.h>
 
-void update_frame(RefPtr<Gfx::Bitmap>);
+void update_frame(RefPtr<Gfx::Bitmap>, unsigned num_cycles);
 
 constexpr size_t DRAWTARGET_WIDTH = 500;
 constexpr size_t DRAWTARGET_HEIGHT = 500;
@@ -36,8 +36,6 @@ private:
     virtual void paint_event(GUI::PaintEvent&) override;
     virtual void timer_event(Core::TimerEvent&) override;
 
-    int m_accumulated_time;
     int m_cycles;
-    int m_phase;
     bool m_show_window_frame { true };
 };
